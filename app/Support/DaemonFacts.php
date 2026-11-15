@@ -49,7 +49,7 @@ final class DaemonFacts
     {
         $addresses = [];
         foreach ($facts['interfaces'] ?? [] as $interface) {
-            if ($skipVirtual && preg_match('/^(lo|docker|br-|veth|virbr|cni|flannel|tailscale|wg|cilium|kube|podman|lxdbr|incusbr)/', (string) ($interface['name'] ?? ''))) {
+            if ($skipVirtual && preg_match('/^(lo|docker|br-|veth|virbr|cni|flannel|tailscale|wg|cilium|kube|podman|lxdbr|lxcbr|incusbr|sos|tun|tap|zt|wt)/', (string) ($interface['name'] ?? ''))) {
                 continue;
             }
             foreach ($interface['addresses'] ?? [] as $address) {

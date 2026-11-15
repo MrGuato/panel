@@ -80,3 +80,18 @@ test('a new private address never comes from a container or cluster interface', 
 
     expect(DaemonFacts::address($facts, '192.168.1.135'))->toBe('192.168.4.135');
 })->with(['cilium_host', 'kube-ipvs0', 'podman0', 'lxdbr0', 'incusbr0', 'docker0', 'wg0']);
+
+test('a machine on wifi gets its wifi address, not a vpn or project network listed before it', function () {
+    // The daemon sends interfaces sorted by name, so wlan0 comes last.
+    $facts = ['interfaces' => [
+        ['name' => 'docker0', 'addresses' => ['172.17.0.1/16']],
+        ['name' => 'lxcbr0', 'addresses' => ['10.0.3.1/24']],
+        ['name' => 'sosp7k2q9', 'addresses' => ['10.88.3.2/24']],
+        ['name' => 'tun0', 'addresses' => ['10.8.0.6/24']],
+        ['name' => 'wlan0', 'addresses' => ['192.168.4.20/24']],
+        ['name' => 'zt5u4abcde', 'addresses' => ['172.27.1.9/16']],
+    ]];
+
+    expect(DaemonFacts::address($facts, '192.168.1.20'))->toBe('192.168.4.20')
+        ->and(DaemonFacts::address($facts, '10.88.3.2'))->toBe('10.88.3.2');
+});
