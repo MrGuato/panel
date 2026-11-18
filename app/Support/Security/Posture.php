@@ -5,13 +5,14 @@ namespace App\Support\Security;
 use App\Models\DaemonRelease;
 use App\Models\Machine;
 use App\Models\MachinePolicy;
+use App\Models\MachineSecurityAcceptance;
 use App\Models\MachineVulnerability;
 use App\Support\DaemonUpdates;
 use App\Support\Firewall;
 use App\Support\Machines\MachinePolicies;
 
 /**
- * @phpstan-type Check array{key: string, severity: string, status: string, params: array<string, string|int>}
+ * @phpstan-type Check array{key: string, severity: string, status: string, params: array<string, string|int>, accepted?: array{by: string|null, reason: string, until: string}}
  * @phpstan-type Report array{state: string, score: int|null, grade: string|null, seenAt: string|null, checks: list<Check>}
  */
 class Posture
@@ -29,6 +30,8 @@ class Posture
     public const WEB_PORTS = [80, 443];
 
     public const PANEL_IMAGE = 'ghcr.io/serveroshq/';
+
+    public const FINGERPRINT = ['ports', 'services', 'names', 'cves', 'latest'];
 
     /** @return Report */
     public static function report(Machine $machine, ?MachinePolicy $policy = null): array
@@ -54,6 +57,7 @@ class Posture
             self::reboot($machine),
             self::daemon($machine),
         ];
+        $checks = self::accepted($machine, $checks);
         usort($checks, fn (array $a, array $b) => [self::rank($a['status']), -self::WEIGHTS[$a['severity']]]
             <=> [self::rank($b['status']), -self::WEIGHTS[$b['severity']]]);
 
@@ -74,7 +78,7 @@ class Posture
     {
         $possible = $lost = 0;
         foreach ($checks as $check) {
-            if ($check['status'] === 'unknown') {
+            if (in_array($check['status'], ['unknown', 'accepted'], true)) {
                 continue;
             }
             $possible += self::WEIGHTS[$check['severity']];
@@ -99,6 +103,35 @@ class Posture
     public static function serious(array $check): bool
     {
         return $check['status'] === 'fail' && self::WEIGHTS[$check['severity']] >= self::WEIGHTS['high'];
+    }
+
+    /** @param Check $check */
+    public static function fingerprint(array $check): string
+    {
+        return sha1((string) json_encode(array_intersect_key($check['params'], array_flip(self::FINGERPRINT))));
+    }
+
+    /**
+     * @param  list<Check>  $checks
+     * @return list<Check>
+     */
+    private static function accepted(Machine $machine, array $checks): array
+    {
+        $machine->loadMissing('securityAcceptances.user');
+        $accepted = $machine->securityAcceptances->filter(fn (MachineSecurityAcceptance $a) => $a->expires_at->isFuture())->keyBy('check');
+
+        return array_map(function (array $check) use ($accepted) {
+            $acceptance = $accepted->get($check['key']);
+            if ($acceptance === null || $check['status'] !== 'fail' || $check['severity'] === 'critical' || $acceptance->fingerprint !== self::fingerprint($check)) {
+                return $check;
+            }
+
+            return [...$check, 'status' => 'accepted', 'accepted' => [
+                'by' => $acceptance->user?->name,
+                'reason' => $acceptance->reason,
+                'until' => $acceptance->expires_at->toIso8601String(),
+            ]];
+        }, $checks);
     }
 
     /** @param list<Check> $checks */
@@ -363,6 +396,6 @@ class Posture
 
     private static function rank(string $status): int
     {
-        return ['fail' => 0, 'unknown' => 1, 'pass' => 2][$status];
+        return ['fail' => 0, 'accepted' => 1, 'unknown' => 2, 'pass' => 3][$status];
     }
 }

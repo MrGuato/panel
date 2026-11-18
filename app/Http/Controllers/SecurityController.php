@@ -23,7 +23,7 @@ class SecurityController extends Controller
 
         $ruled = MachinePolicies::ruled($workspace->id);
         $default = MachinePolicies::defaultFor($workspace);
-        $machines = $workspace->machines()->whereNotNull('uid')->with(['policy', 'group.policy', 'vulnerabilities' => fn ($query) => $query->open()->with('vulnerability')])->orderBy('name')->get();
+        $machines = $workspace->machines()->whereNotNull('uid')->with(['policy', 'group.policy', 'securityAcceptances.user', 'vulnerabilities' => fn ($query) => $query->open()->with('vulnerability')])->orderBy('name')->get();
         $history = MachineSecurityScore::query()
             ->whereIn('machine_id', $machines->modelKeys())
             ->whereDate('date', '>=', now()->subDays(self::TREND_DAYS - 1)->toDateString())

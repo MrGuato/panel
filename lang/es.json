@@ -3695,5 +3695,16 @@
     "Wasn’t failing yesterday": "Ayer no fallaba",
     "Security :score :grade": "Seguridad :score :grade",
     "Security checks off": "Comprobaciones de seguridad desactivadas",
-    "Security incomplete": "Seguridad incompleta"
+    "Security incomplete": "Seguridad incompleta",
+    "Accept :check on :machine": "Aceptar :check en :machine",
+    "Accepted by :name until :date: :reason": "Aceptado por :name hasta el :date: :reason",
+    "Accepted until :date: :reason": "Aceptado hasta el :date: :reason",
+    "Accepting…": "Aceptando…",
+    "Game server ports, meant to be public": "Puertos del servidor de juegos, públicos a propósito",
+    "It stops counting against the score until it expires, or until what fails changes. Everyone who can manage machines sees who accepted it and why.": "Deja de restar puntos hasta que caduque o hasta que cambie lo que falla. Quien pueda gestionar máquinas ve quién lo aceptó y por qué.",
+    "Why": "Por qué",
+    "That check isn’t failing.": "Esa comprobación no está fallando.",
+    "Critical checks can’t be accepted. Fix them instead.": "Las comprobaciones críticas no se pueden aceptar. Corrígelas.",
+    "accepted a failing security check on": "aceptó una comprobación de seguridad fallida en",
+    "stopped accepting a security check on": "dejó de aceptar una comprobación de seguridad en"
 }

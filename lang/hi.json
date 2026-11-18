@@ -3695,5 +3695,16 @@
     "Wasn’t failing yesterday": "कल फ़ेल नहीं हो रहा था",
     "Security :score :grade": "सिक्योरिटी :score :grade",
     "Security checks off": "सुरक्षा जांच बंद",
-    "Security incomplete": "सिक्योरिटी अधूरी"
+    "Security incomplete": "सिक्योरिटी अधूरी",
+    "Accept :check on :machine": ":machine पर :check स्वीकार करें",
+    "Accepted by :name until :date: :reason": ":name ने :date तक स्वीकार किया: :reason",
+    "Accepted until :date: :reason": ":date तक स्वीकार किया: :reason",
+    "Accepting…": "स्वीकार हो रहा है…",
+    "Game server ports, meant to be public": "गेम सर्वर पोर्ट, जानबूझकर पब्लिक",
+    "It stops counting against the score until it expires, or until what fails changes. Everyone who can manage machines sees who accepted it and why.": "यह स्कोर पर असर डालना बंद कर देता है, जब तक इसकी मियाद खत्म न हो या जो फ़ेल हो रहा है वह न बदले। मशीनें मैनेज करने वाले सभी देख सकते हैं कि इसे किसने और क्यों स्वीकार किया।",
+    "Why": "क्यों",
+    "That check isn’t failing.": "वह जांच फ़ेल नहीं हो रही है।",
+    "Critical checks can’t be accepted. Fix them instead.": "क्रिटिकल जांच स्वीकार नहीं की जा सकतीं। इन्हें ठीक करें।",
+    "accepted a failing security check on": "ने एक फ़ेल सुरक्षा जांच स्वीकार की",
+    "stopped accepting a security check on": "ने एक सुरक्षा जांच स्वीकार करना बंद किया"
 }

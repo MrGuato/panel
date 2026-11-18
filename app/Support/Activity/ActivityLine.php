@@ -108,6 +108,8 @@ final class ActivityLine
             'monitor.pause' => $set('paused the monitor'),
             'status_page.fleet' => $set(($meta['enabled'] ?? false) ? 'updated the fleet status page' : 'turned off the fleet status page'),
             'issues.dismiss' => $set('marked as read', 'in Needs attention'),
+            'security.accept' => $set('accepted a failing security check on', $details && isset($meta['reason']) ? '“'.$meta['reason'].'”' : null, 'warn'),
+            'security.unaccept' => $set('stopped accepting a security check on'),
             'monitor.resume' => $set('resumed the monitor'),
             'monitor.remove' => $set('deleted the monitor', null, 'bad'),
             'monitor.down' => $set('went down', null, 'bad'),

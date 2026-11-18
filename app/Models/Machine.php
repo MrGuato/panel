@@ -159,6 +159,12 @@ class Machine extends Model
         return $this->hasMany(MachineVulnerability::class);
     }
 
+    /** @return HasMany<MachineSecurityAcceptance, $this> */
+    public function securityAcceptances(): HasMany
+    {
+        return $this->hasMany(MachineSecurityAcceptance::class);
+    }
+
     /** @return BelongsTo<MachineGroup, $this> */
     public function group(): BelongsTo
     {

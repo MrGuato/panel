@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\DaemonRelease;
 use App\Models\Machine;
+use App\Models\MachineSecurityAcceptance;
 use App\Models\MachineSecurityScore;
 use App\Models\MachineVulnerability;
 use App\Models\User;
@@ -436,4 +438,67 @@ test('the machine page shows its security score only to members who can manage m
     $this->actingAs($viewer)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('security', null));
     $this->actingAs($workspace->owner)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page
         ->where('security', ['state' => 'scored', 'score' => 100, 'grade' => 'A']));
+});
+
+test('a member who can manage machines can accept a failing check, with a reason and an expiry', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = postureMachine($workspace, 'game-1', hardened(), [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 2456, 'exe' => '/usr/bin/docker-proxy', 'pid' => 7],
+    ], ['backend' => 'ufw', 'installed' => true, 'active' => true, 'default_incoming' => 'deny', 'ports' => [['port' => 2456, 'proto' => 'tcp', 'exposure' => 'docker']]]);
+    $url = 'https://'.$workspace->host().'/security/machines/'.$machine->id.'/accepted';
+    $before = Posture::report($machine)['score'];
+
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'docker_ports', 'reason' => 'Valheim, meant to be public', 'days' => 90])->assertSessionHasNoErrors();
+
+    $report = Posture::report($machine->fresh());
+    $check = postureChecks($report)['docker_ports'];
+    expect($check['status'])->toBe('accepted')
+        ->and($check['accepted'])->toMatchArray(['by' => $workspace->owner->name, 'reason' => 'Valheim, meant to be public'])
+        ->and($report['score'])->toBe(100)->and($before)->toBeLessThan(100)
+        ->and(Activity::query()->where('action', 'security.accept')->exists())->toBeTrue();
+
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+    $activity = 'https://'.$workspace->host().'/activity';
+    expect($this->actingAs($viewer)->get($activity)->getContent())->not->toContain('Valheim, meant to be public')
+        ->and($this->actingAs($workspace->owner)->get($activity)->getContent())->toContain('Valheim, meant to be public');
+
+    $this->travel(91)->days();
+    expect(postureChecks(Posture::report($machine->fresh()))['docker_ports']['status'])->toBe('fail');
+});
+
+test('an accepted check fails again when what fails changes, and Undo takes it back', function () {
+    $workspace = Workspace::factory()->create();
+    $firewall = fn (array $ports) => ['backend' => 'ufw', 'installed' => true, 'active' => true, 'default_incoming' => 'deny', 'ports' => array_map(fn (int $p) => ['port' => $p, 'proto' => 'tcp', 'exposure' => 'docker'], $ports)];
+    $listener = fn (int $p) => ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => $p, 'exe' => '/usr/bin/docker-proxy', 'pid' => $p];
+    $machine = postureMachine($workspace, 'game-1', hardened(), [$listener(2456)], $firewall([2456]));
+    $url = 'https://'.$workspace->host().'/security/machines/'.$machine->id.'/accepted';
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'docker_ports', 'reason' => 'Game ports', 'days' => 30]);
+
+    $machine->forceFill(['inventory' => [...$machine->inventory, 'listeners' => [$listener(2456), $listener(9000)], 'firewall' => $firewall([2456, 9000])]])->save();
+    expect(postureChecks(Posture::report($machine->fresh()))['docker_ports']['status'])->toBe('fail');
+
+    $this->actingAs($workspace->owner)->delete($url.'/docker_ports')->assertRedirect();
+    expect($machine->securityAcceptances()->count())->toBe(0)
+        ->and(Activity::query()->where('action', 'security.unaccept')->exists())->toBeTrue();
+});
+
+test('critical, passing and unknown checks can’t be accepted, and viewers can’t accept anything', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = postureMachine($workspace, 'cve-1', hardened());
+    postureCve($machine, 'CVE-2026-0101', 'critical', exploited: true);
+    $url = 'https://'.$workspace->host().'/security/machines/'.$machine->id.'/accepted';
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'exploited', 'reason' => 'Later', 'days' => 30])->assertSessionHasErrors('check');
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'firewall', 'reason' => 'x', 'days' => 30])->assertSessionHasErrors('check');
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'daemon', 'reason' => 'x', 'days' => 30])->assertSessionHasErrors('check');
+    $this->actingAs($workspace->owner)->post($url, ['check' => 'firewall', 'reason' => 'x', 'days' => 365])->assertSessionHasErrors('days');
+    $this->actingAs($viewer)->post($url, ['check' => 'exploited', 'reason' => 'x', 'days' => 30])->assertForbidden();
+
+    $other = postureMachine(Workspace::factory()->create(), 'other-1', hardened());
+    $this->actingAs($workspace->owner)->post('https://'.$workspace->host().'/security/machines/'.$other->id.'/accepted', ['check' => 'firewall', 'reason' => 'x', 'days' => 30])->assertNotFound();
+
+    expect(MachineSecurityAcceptance::query()->count())->toBe(0);
 });

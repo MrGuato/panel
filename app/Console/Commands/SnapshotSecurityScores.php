@@ -23,7 +23,7 @@ class SnapshotSecurityScores extends Command
         $policies = [];
 
         Machine::query()->whereNotNull('uid')
-            ->with(['workspace', 'policy', 'group.policy', 'vulnerabilities' => fn ($query) => $query->open()->with('vulnerability')])
+            ->with(['workspace', 'policy', 'group.policy', 'securityAcceptances.user', 'vulnerabilities' => fn ($query) => $query->open()->with('vulnerability')])
             ->chunkById(200, function ($machines) use ($today, &$policies) {
                 foreach ($machines as $machine) {
                     [$ruled, $default] = $policies[$machine->workspace_id] ??= [MachinePolicies::ruled($machine->workspace_id), MachinePolicies::defaultFor($machine->workspace)];

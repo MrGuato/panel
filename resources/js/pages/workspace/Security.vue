@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { trans } from 'laravel-vue-i18n';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { ChevronDown } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import AcceptCheckDialog from '@/components/security/AcceptCheckDialog.vue';
 import WorkspacePage from '@/components/workspace/WorkspacePage.vue';
 import { onWorkspace } from '@/lib/workspaceRoute';
 import machinesRoutes from '@/routes/workspace/machines';
@@ -13,8 +14,9 @@ type Severity = 'critical' | 'high' | 'medium' | 'low';
 type Check = {
     key: string;
     severity: Severity;
-    status: 'pass' | 'fail' | 'unknown';
+    status: 'pass' | 'fail' | 'accepted' | 'unknown';
     params: Record<string, string | number>;
+    accepted?: { by: string | null; reason: string; until: string };
 };
 
 type Machine = {
@@ -202,13 +204,45 @@ function params(check: Check): Record<string, string> {
 }
 
 function detail(check: Check): string {
-    if (check.status !== 'fail') return '';
+    if (check.status !== 'fail' && check.status !== 'accepted') return '';
 
     const text = trans(copy[check.key]?.fail ?? check.key, params(check));
 
     return check.params.more
         ? `${text} ${trans('(:more more)', { more: String(check.params.more) })}`
         : text;
+}
+
+const accepting = ref<{ machine: Machine; check: Check } | null>(null);
+const acceptOpen = ref(false);
+
+function accept(machine: Machine, check: Check): void {
+    accepting.value = { machine, check };
+    acceptOpen.value = true;
+}
+
+function unaccept(machine: Machine, check: Check): void {
+    router.delete(`/security/machines/${machine.id}/accepted/${check.key}`, {
+        preserveScroll: true,
+    });
+}
+
+function acceptedLine(check: Check): string {
+    const until = new Date(check.accepted?.until ?? '').toLocaleDateString(
+        undefined,
+        { month: 'short', day: 'numeric', year: 'numeric' },
+    );
+
+    return trans(
+        check.accepted?.by
+            ? 'Accepted by :name until :date: :reason'
+            : 'Accepted until :date: :reason',
+        {
+            name: check.accepted?.by ?? '',
+            date: until,
+            reason: check.accepted?.reason ?? '',
+        },
+    );
 }
 
 function scoreTone(score: number | null): string {
@@ -538,7 +572,9 @@ function machineHref(machine: Machine) {
                                         ? $t(severityLabel[check.severity])
                                         : check.status === 'pass'
                                           ? $t('Passed')
-                                          : $t('Unknown')
+                                          : check.status === 'accepted'
+                                            ? $t('Accepted')
+                                            : $t('Unknown')
                                 }}</span
                             >
                             <span class="text-(--ds-text)" role="cell">
@@ -566,6 +602,30 @@ function machineHref(machine: Machine) {
                                 role="cell"
                             >
                                 {{ $t(copy[check.key].fix) }}
+                                <button
+                                    v-if="check.severity !== 'critical'"
+                                    type="button"
+                                    class="ml-1 cursor-pointer font-medium text-(--ds-blue) hover:underline hover:underline-offset-4"
+                                    :class="focusRing"
+                                    @click="accept(machine, check)"
+                                >
+                                    {{ $t('Accept') }}
+                                </button>
+                            </span>
+                            <span
+                                v-if="check.status === 'accepted'"
+                                class="col-start-3 text-(--ds-text-muted)"
+                                role="cell"
+                            >
+                                {{ acceptedLine(check) }}
+                                <button
+                                    type="button"
+                                    class="ml-1 cursor-pointer font-medium text-(--ds-blue) hover:underline hover:underline-offset-4"
+                                    :class="focusRing"
+                                    @click="unaccept(machine, check)"
+                                >
+                                    {{ $t('Undo') }}
+                                </button>
                             </span>
                         </div>
                         <Link
@@ -591,5 +651,13 @@ function machineHref(machine: Machine) {
                 $t('Connect a machine to see its security score.')
             }}</span>
         </div>
+        <AcceptCheckDialog
+            v-if="accepting"
+            v-model:open="acceptOpen"
+            :machine-id="accepting.machine.id"
+            :machine-name="accepting.machine.name"
+            :check="accepting.check.key"
+            :label="$t(copy[accepting.check.key]?.label ?? accepting.check.key)"
+        />
     </WorkspacePage>
 </template>
