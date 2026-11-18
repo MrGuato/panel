@@ -27,6 +27,8 @@ type Machine = {
     score: number | null;
     grade: string | null;
     checks: Check[];
+    trend: { day: string; score: number | null }[];
+    newFailing: string[];
 };
 
 type Filter = 'all' | 'attention' | 'passing';
@@ -251,9 +253,29 @@ const rows = computed(() =>
 const columns = {
     machine: 'w-64 shrink-0',
     score: 'w-24 shrink-0',
+    trend: 'w-44 shrink-0 pr-6',
     issues: 'w-20 shrink-0',
     top: 'min-w-64 flex-1',
 };
+
+function dayTone(score: number | null): string {
+    if (score === null) return 'bg-(--ds-active)';
+    if (score >= 90) return 'bg-(--ds-green)';
+    if (score >= 70) return 'bg-(--ds-amber)';
+
+    return 'bg-(--ds-red)';
+}
+
+function dayLabel(day: { day: string; score: number | null }): string {
+    const date = new Date(`${day.day}T00:00:00`).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+    });
+
+    return day.score === null
+        ? trans(':date: no score', { date })
+        : `${date}: ${day.score}`;
+}
 
 function settingsHref(machine: Machine) {
     return onWorkspace(
@@ -358,6 +380,9 @@ function machineHref(machine: Machine) {
                     <span :class="columns.score" role="columnheader">{{
                         $t('Score')
                     }}</span>
+                    <span :class="columns.trend" role="columnheader">{{
+                        $t('Last 30 days')
+                    }}</span>
                     <span :class="columns.issues" role="columnheader">{{
                         $t('Issues')
                     }}</span>
@@ -412,6 +437,19 @@ function machineHref(machine: Machine) {
                             <span v-else class="text-(--ds-text-muted)">{{
                                 $t(stateLabel[machine.state])
                             }}</span>
+                        </div>
+                        <div
+                            :class="columns.trend"
+                            class="flex h-5 gap-px"
+                            role="cell"
+                        >
+                            <span
+                                v-for="day in machine.trend"
+                                :key="day.day"
+                                class="min-w-0 flex-1 rounded-[1px]"
+                                :class="dayTone(day.score)"
+                                :title="dayLabel(day)"
+                            />
                         </div>
                         <div
                             :class="columns.issues"
@@ -505,6 +543,15 @@ function machineHref(machine: Machine) {
                             >
                             <span class="text-(--ds-text)" role="cell">
                                 {{ $t(copy[check.key]?.label ?? check.key) }}
+                                <span
+                                    v-if="
+                                        check.status === 'fail' &&
+                                        machine.newFailing.includes(check.key)
+                                    "
+                                    class="ml-1.5 rounded-sm bg-(--ds-amber-bg) px-1 text-[11px]/4 font-medium text-(--ds-amber)"
+                                    :title="$t('Wasn’t failing yesterday')"
+                                    >{{ $t('New') }}</span
+                                >
                             </span>
                             <span
                                 class="text-(--ds-text-secondary)"

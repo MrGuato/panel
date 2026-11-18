@@ -3690,5 +3690,7 @@
     "Version :installed, :latest is out": "Versión :installed, ya está disponible :latest",
     "(:more more)": "(:more más)",
     "Known to be exploited, with a fix waiting: :cves": "Se sabe que se explotan y hay una corrección pendiente: :cves",
-    "Rated critical or high, with a fix waiting: :cves": "De gravedad crítica o alta y con una corrección pendiente: :cves"
+    "Rated critical or high, with a fix waiting: :cves": "De gravedad crítica o alta y con una corrección pendiente: :cves",
+    ":date: no score": ":date: sin puntuación",
+    "Wasn’t failing yesterday": "Ayer no fallaba"
 }

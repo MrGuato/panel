@@ -3690,5 +3690,7 @@
     "Version :installed, :latest is out": "वर्ज़न :installed, :latest आ चुका है",
     "(:more more)": "(:more और)",
     "Known to be exploited, with a fix waiting: :cves": "एक्सप्लॉइट होने की जानकारी है, फ़िक्स पेंडिंग है: :cves",
-    "Rated critical or high, with a fix waiting: :cves": "क्रिटिकल या हाई रेटिंग, फ़िक्स पेंडिंग है: :cves"
+    "Rated critical or high, with a fix waiting: :cves": "क्रिटिकल या हाई रेटिंग, फ़िक्स पेंडिंग है: :cves",
+    ":date: no score": ":date: कोई स्कोर नहीं",
+    "Wasn’t failing yesterday": "कल फ़ेल नहीं हो रहा था"
 }

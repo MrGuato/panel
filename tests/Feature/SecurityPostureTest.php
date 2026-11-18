@@ -2,6 +2,7 @@
 
 use App\Models\DaemonRelease;
 use App\Models\Machine;
+use App\Models\MachineSecurityScore;
 use App\Models\MachineVulnerability;
 use App\Models\User;
 use App\Models\Vulnerability;
@@ -381,4 +382,46 @@ test('CVE checks count open vulnerabilities only, and leave the score alone when
     $report = Posture::report($machine->fresh());
     expect($report['state'])->toBe('scored')
         ->and(postureChecks($report))->not->toHaveKey('exploited');
+});
+
+test('the snapshot keeps one score per machine per day and forgets old ones', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'web-1', hardened());
+    MachineSecurityScore::query()->create(['machine_id' => $machine->id, 'date' => now()->subDays(MachineSecurityScore::KEEP_DAYS + 1)->toDateString(), 'state' => 'scored', 'score' => 40, 'failing' => []]);
+
+    $this->artisan('security:snapshot')->assertSuccessful();
+    $machine->forceFill(['facts' => [...$machine->facts, 'security' => [...hardened(), 'ssh' => ['password_authentication' => true, 'permit_root_login' => 'no']]]])->save();
+    $this->artisan('security:snapshot')->assertSuccessful();
+
+    $rows = MachineSecurityScore::query()->where('machine_id', $machine->id)->get();
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->date->toDateString())->toBe(now()->toDateString())
+        ->and($rows->first()->failing)->toBe(['ssh_password'])
+        ->and($rows->first()->score)->toBeLessThan(100);
+});
+
+test('the snapshot follows each machine’s policy', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = postureMachine($workspace, 'quiet-1', hardened());
+    MachinePolicies::defaultFor($workspace)->update(['security_watch' => false]);
+
+    $this->artisan('security:snapshot')->assertSuccessful();
+
+    expect(MachineSecurityScore::query()->where('machine_id', $machine->id)->value('state'))->toBe('watch_off');
+});
+
+test('the page shows each machine’s last 30 days, today live, and what started failing since yesterday', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = postureMachine($workspace, 'web-1', [...hardened(), 'ssh' => ['password_authentication' => true, 'permit_root_login' => 'no']]);
+    MachineSecurityScore::query()->create(['machine_id' => $machine->id, 'date' => now()->subDay()->toDateString(), 'state' => 'scored', 'score' => 100, 'failing' => []]);
+    MachineSecurityScore::query()->create(['machine_id' => $machine->id, 'date' => now()->subDays(3)->toDateString(), 'state' => 'scored', 'score' => 90, 'failing' => ['reboot']]);
+    $live = Posture::report($machine)['score'];
+
+    $this->actingAs($workspace->owner)->get('https://'.$workspace->host().'/security')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('machines.0.trend', 30)
+        ->where('machines.0.trend.28', ['day' => now()->subDay()->toDateString(), 'score' => 100])
+        ->where('machines.0.trend.27.score', null)
+        ->where('machines.0.trend.26.score', 90)
+        ->where('machines.0.trend.29.score', $live)
+        ->where('machines.0.newFailing', ['ssh_password'])
+    );
 });
