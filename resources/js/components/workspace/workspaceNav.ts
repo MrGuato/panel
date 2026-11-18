@@ -15,6 +15,7 @@ import {
     SolarMonitors,
     SolarServices,
     SolarSettings,
+    SolarShieldCheck,
     SolarWorkflows,
     SolarSparkles,
 } from '@/lib/solarIcons';
@@ -27,6 +28,7 @@ import logs from '@/routes/workspace/logs';
 import machines from '@/routes/workspace/machines';
 import monitors from '@/routes/workspace/monitors';
 import projects from '@/routes/workspace/projects';
+import security from '@/routes/workspace/security';
 import services from '@/routes/workspace/services';
 import updates from '@/routes/workspace/updates';
 import fixes from '@/routes/workspace/fixes';
@@ -34,7 +36,7 @@ import workflows from '@/routes/workspace/workflows';
 import members from '@/routes/workspace/members';
 import settings from '@/routes/workspace/settings';
 import { useSettingsNav } from '@/components/workspace/settingsNav';
-import type { Workspace } from '@/types';
+import type { Workspace, WorkspaceAccess } from '@/types';
 
 const icons = {
     House: SolarHome,
@@ -49,6 +51,7 @@ const icons = {
     Users: SolarMembers,
     History: SolarActivity,
     Settings: SolarSettings,
+    Shield: SolarShieldCheck,
 };
 
 export type WorkspaceNavItem = {
@@ -79,6 +82,7 @@ export type WorkspaceNavGroup =
 export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
     const page = usePage<{
         workspace?: Workspace;
+        workspaceAccess?: WorkspaceAccess | null;
         extensions?: { nav: ExtensionNavItem[] } | null;
     }>();
 
@@ -117,6 +121,14 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
                 icon: icons.PackageCheck,
                 href: onWorkspace(updates.index(slug)),
                 active: page.component === 'workspace/Updates',
+                group: 'servers',
+            },
+            {
+                key: 'security',
+                label: trans('Security'),
+                icon: icons.Shield,
+                href: onWorkspace(security.index(slug)),
+                active: page.component === 'workspace/Security',
                 group: 'servers',
             },
             {
@@ -225,8 +237,13 @@ export function useWorkspaceNav(): ComputedRef<WorkspaceNavItem[]> {
             },
         ];
 
+        const canManage =
+            page.props.workspaceAccess?.permissions.includes(
+                'manage-machines',
+            ) ?? false;
+
         return withExtensions(
-            items,
+            canManage ? items : items.filter((item) => item.key !== 'security'),
             page.props.extensions?.nav ?? [],
             page.component,
         );

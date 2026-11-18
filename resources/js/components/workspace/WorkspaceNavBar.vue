@@ -50,6 +50,7 @@ const tabOrder = [
     'Home',
     'Machines',
     'Updates',
+    'Security',
     'Services',
     'Projects',
     'Cloud',

@@ -1,12 +1,14 @@
 <?php
 
 use App\Models\Machine;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Support\Health\WorkspaceHealth;
 use App\Support\Machines\MachinePolicies;
 use App\Support\Security\Posture;
 use App\Support\Security\SecurityFacts;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 
 /**
  * @param  array<string, mixed>  $security
@@ -206,4 +208,50 @@ test('an exposed database fails here exactly when the machine page warns about i
         expect(postureChecks(Posture::report($machine))['exposed']['status'])->toBe($warned ? 'fail' : 'pass');
     }
     expect(postureChecks(Posture::report($open))['exposed']['status'])->toBe('fail');
+});
+
+test('the Security page lists the workspace’s machines, counting each serious one once', function () {
+    $workspace = Workspace::factory()->create();
+    postureMachine($workspace, 'web-1', hardened());
+    postureMachine($workspace, 'web-2', [...hardened(), 'ssh' => ['password_authentication' => true, 'permit_root_login' => 'yes']], [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 6379, 'exe' => '/usr/bin/redis-server', 'pid' => 4],
+    ], ['backend' => 'ufw', 'installed' => true, 'active' => true, 'ports' => [['port' => 6379, 'proto' => 'tcp', 'exposure' => 'open']]]);
+    postureMachine(Workspace::factory()->create(), 'elsewhere', hardened());
+    $member = User::factory()->create();
+    $workspace->members()->attach($member, ['role' => 'member']);
+
+    $this->actingAs($member)->get('https://'.$workspace->host().'/security')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('workspace/Security')
+        ->has('machines', 2)
+        ->where('machines.0.name', 'web-1')
+        ->where('machines.0.score', 100)
+        ->where('machines.0.policy', 'Default')
+        ->where('machines.1.score', 50)
+        ->where('machines.1.state', 'scored')
+        ->where('summary.average', 75)
+        ->where('summary.serious', 1)
+        ->where('summary.scored', 2)
+    );
+});
+
+test('only members who can manage machines see the Security page', function () {
+    $workspace = Workspace::factory()->create();
+    postureMachine($workspace, 'web-1', hardened());
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+
+    $this->actingAs($viewer)->get('https://'.$workspace->host().'/security')->assertForbidden();
+    $this->actingAs(User::factory()->create())->get('https://'.$workspace->host().'/security')->assertForbidden();
+});
+
+test('the Security page names the policy that turned security watch off', function () {
+    $workspace = Workspace::factory()->create();
+    postureMachine($workspace, 'quiet-1', hardened());
+    MachinePolicies::defaultFor($workspace)->update(['security_watch' => false, 'name' => 'Hosting']);
+
+    $this->actingAs($workspace->owner)->get('https://'.$workspace->host().'/security')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('machines.0.state', 'watch_off')
+        ->where('machines.0.policy', 'Hosting')
+        ->where('summary.scored', 0)
+    );
 });

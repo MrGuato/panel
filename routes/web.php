@@ -44,6 +44,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PublicStatusController;
 use App\Http\Controllers\RobotsTxtController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\ServiceDetectController;
 use App\Http\Controllers\ServiceGroupController;
@@ -281,6 +282,7 @@ Route::domain('{workspace:slug}.'.config('app.domain'))
         Route::get('machines/{machine}/updates', [MachineUpdatesController::class, 'snapshot'])->name('workspace.machines.updates.snapshot');
         Route::get('machines/{machine}/updates/{job}', [MachineUpdatesController::class, 'show'])->name('workspace.machines.updates.show');
         Route::get('updates', [UpdatesController::class, 'index'])->name('workspace.updates.index');
+        Route::get('security', [SecurityController::class, 'index'])->name('workspace.security.index');
         Route::post('updates/check', [UpdatesController::class, 'check'])->middleware('throttle:6,1')->name('workspace.updates.check');
         Route::post('updates/holds', [UpdatesController::class, 'hold'])->middleware('throttle:20,1')->name('workspace.updates.holds');
         Route::post('updates/rollouts', [UpdatesController::class, 'storeRollout'])->middleware('throttle:10,1')->name('workspace.updates.rollouts.store');

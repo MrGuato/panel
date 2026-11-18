@@ -90,6 +90,7 @@ const ORDER = [
     'Services',
     'Projects',
     'Updates',
+    'Security',
     'Monitors',
     'Logs',
     'Backups',
