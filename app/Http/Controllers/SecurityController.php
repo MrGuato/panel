@@ -18,7 +18,7 @@ class SecurityController extends Controller
 
         $ruled = MachinePolicies::ruled($workspace->id);
         $default = MachinePolicies::defaultFor($workspace);
-        $machines = $workspace->machines()->whereNotNull('uid')->with(['policy', 'group.policy'])->orderBy('name')->get();
+        $machines = $workspace->machines()->whereNotNull('uid')->with(['policy', 'group.policy', 'vulnerabilities' => fn ($query) => $query->open()->with('vulnerability')])->orderBy('name')->get();
 
         $rows = $machines->map(function (Machine $machine) use ($ruled, $default) {
             $policy = MachinePolicies::resolve($machine, $ruled, $default)['policy'];

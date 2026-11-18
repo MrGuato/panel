@@ -8,10 +8,12 @@ final readonly class SecurityFacts
 {
     public function __construct(
         public ?bool $passwordAuthentication = null,
+        public bool $keyboardThroughPam = false,
         public ?string $permitRootLogin = null,
         public ?int $failedSignIns = null,
         public int $failedSources = 0,
         public int $failedAsRoot = 0,
+        public ?int $passwordSignIns = null,
         public int $windowMinutes = 60,
         public ?bool $autoUpdates = null,
     ) {}
@@ -28,10 +30,12 @@ final readonly class SecurityFacts
 
         return new self(
             passwordAuthentication: self::bool($ssh['password_authentication'] ?? null),
+            keyboardThroughPam: ($ssh['kbd_interactive_authentication'] ?? false) === true && ($ssh['use_pam'] ?? true) !== false,
             permitRootLogin: is_string($root) && $root !== '' ? strtolower($root) : null,
             failedSignIns: self::int($logins['failed'] ?? null),
             failedSources: self::int($logins['sources'] ?? null) ?? 0,
             failedAsRoot: self::int($logins['root'] ?? null) ?? 0,
+            passwordSignIns: self::int($logins['accepted_password'] ?? null),
             windowMinutes: max(1, intdiv(self::int($logins['window_secs'] ?? null) ?? 3600, 60)),
             autoUpdates: self::bool($security['auto_updates'] ?? null),
         );
@@ -39,7 +43,7 @@ final readonly class SecurityFacts
 
     public function passwordSignIn(): ?bool
     {
-        return $this->passwordAuthentication;
+        return $this->passwordAuthentication === null ? null : $this->passwordAuthentication || $this->keyboardThroughPam;
     }
 
     private static function bool(mixed $value): ?bool

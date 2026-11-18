@@ -70,6 +70,46 @@ const copy: Record<string, { label: string; fail: string; fix: string }> = {
         fail: ':failed failed SSH connections from :sources addresses in the last :minutes minutes',
         fix: 'Turn off password sign-in and allow SSH only from addresses you use, or add fail2ban.',
     },
+    password_used: {
+        label: 'Password sign-ins',
+        fail: 'SSH sign-ins with a password in the last :minutes minutes: :count',
+        fix: 'Add an SSH key for the accounts that use a password, then turn off password sign-in.',
+    },
+    docker_ports: {
+        label: 'Docker ports',
+        fail: 'Reachable past the firewall: :ports',
+        fix: 'Publish them on 127.0.0.1 in the compose file and put a reverse proxy in front, or filter them in the DOCKER-USER chain.',
+    },
+    firewall_default: {
+        label: 'Firewall default',
+        fail: 'Incoming connections are allowed unless a rule blocks them',
+        fix: 'Deny incoming by default (ufw default deny incoming) and allow only the ports you use.',
+    },
+    certificate_expired: {
+        label: 'Expired certificates',
+        fail: 'Expired: :names',
+        fix: 'Renew them, and check that automatic renewal is running.',
+    },
+    certificate_expiring: {
+        label: 'Expiring certificates',
+        fail: 'Expiring within :days days: :names',
+        fix: 'Check that automatic renewal is running, or renew them now.',
+    },
+    exploited: {
+        label: 'Exploited vulnerabilities',
+        fail: 'Known to be exploited, with a fix waiting: :cves',
+        fix: 'Install the security updates from the Updates tab now.',
+    },
+    cves: {
+        label: 'Serious vulnerabilities',
+        fail: 'Rated critical or high, with a fix waiting: :cves',
+        fix: 'Install the security updates from the Updates tab.',
+    },
+    daemon: {
+        label: 'ServerOS daemon',
+        fail: 'Version :installed, :latest is out',
+        fix: 'Turn on Daemon updates in the machine’s policy, so new releases install on their own.',
+    },
     exposed: {
         label: 'Databases on the internet',
         fail: 'Open to the internet: :services',
@@ -162,7 +202,11 @@ function params(check: Check): Record<string, string> {
 function detail(check: Check): string {
     if (check.status !== 'fail') return '';
 
-    return trans(copy[check.key]?.fail ?? check.key, params(check));
+    const text = trans(copy[check.key]?.fail ?? check.key, params(check));
+
+    return check.params.more
+        ? `${text} ${trans('(:more more)', { more: String(check.params.more) })}`
+        : text;
 }
 
 function scoreTone(score: number | null): string {

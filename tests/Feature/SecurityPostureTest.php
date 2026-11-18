@@ -1,7 +1,10 @@
 <?php
 
+use App\Models\DaemonRelease;
 use App\Models\Machine;
+use App\Models\MachineVulnerability;
 use App\Models\User;
+use App\Models\Vulnerability;
 use App\Models\Workspace;
 use App\Support\Health\WorkspaceHealth;
 use App\Support\Machines\MachinePolicies;
@@ -16,7 +19,7 @@ use Inertia\Testing\AssertableInertia as Assert;
  * @param  array<string, mixed>  $firewall
  * @param  array<string, mixed>  $attributes
  */
-function postureMachine(Workspace $workspace, string $name, array $security, array $listeners = [], array $firewall = ['backend' => 'ufw', 'installed' => true, 'active' => true, 'ports' => []], array $attributes = []): Machine
+function postureMachine(Workspace $workspace, string $name, array $security, array $listeners = [], array $firewall = ['backend' => 'ufw', 'installed' => true, 'active' => true, 'default_incoming' => 'deny', 'ports' => []], array $attributes = []): Machine
 {
     $machine = Machine::factory()->for($workspace)->create(['name' => $name]);
     $machine->forceFill([
@@ -27,6 +30,7 @@ function postureMachine(Workspace $workspace, string $name, array $security, arr
         'updates_checked_at' => now(),
         'security_updates_count' => 0,
         'reboot_required' => false,
+        'vulns_scanned_at' => now(),
         ...$attributes,
     ])->save();
 
@@ -41,6 +45,15 @@ function hardened(): array
         'logins' => ['window_secs' => 3600, 'failed' => 2, 'sources' => 1, 'root' => 0, 'accepted_password' => 0],
         'auto_updates' => true,
     ];
+}
+
+function postureCve(Machine $machine, string $cve, string $severity, bool $exploited = false, bool $resolved = false): void
+{
+    $vulnerability = Vulnerability::query()->create(['cve' => $cve, 'severity' => $severity, 'exploited' => $exploited]);
+    MachineVulnerability::query()->create([
+        'machine_id' => $machine->id, 'vulnerability_id' => $vulnerability->id, 'source' => 'openssl', 'packages' => ['openssl'],
+        'detected_at' => now(), 'resolved_at' => $resolved ? now() : null,
+    ]);
 }
 
 /** @return array<string, array<string, mixed>> */
@@ -60,29 +73,42 @@ test('a hardened machine scores 100 and every check passes', function () {
     expect($report['state'])->toBe('scored')
         ->and($report['score'])->toBe(100)
         ->and($report['grade'])->toBe('A')
-        ->and(collect($report['checks'])->pluck('status')->unique()->all())->toBe(['pass']);
+        ->and(collect($report['checks'])->where('status', 'fail')->all())->toBe([]);
 });
 
 test('a machine failing every check scores 0, worst first, with the details to show', function () {
     $machine = postureMachine(Workspace::factory()->create(), 'db-1', [
         'ssh' => ['password_authentication' => true, 'permit_root_login' => 'yes'],
-        'logins' => ['window_secs' => 3600, 'failed' => 140, 'sources' => 9, 'root' => 60, 'accepted_password' => 0],
+        'logins' => ['window_secs' => 3600, 'failed' => 140, 'sources' => 9, 'root' => 60, 'accepted_password' => 3],
         'auto_updates' => false,
     ], [
         ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 5432, 'exe' => '/usr/lib/postgresql/16/bin/postgres', 'pid' => 2],
         ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 23, 'exe' => '/usr/sbin/in.telnetd', 'pid' => 3],
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 8080, 'exe' => '/usr/bin/docker-proxy', 'pid' => 4],
     ], ['backend' => 'ufw', 'installed' => true, 'active' => false, 'ports' => [
         ['port' => 5432, 'proto' => 'tcp', 'exposure' => 'open'],
         ['port' => 23, 'proto' => 'tcp', 'exposure' => 'open'],
+        ['port' => 8080, 'proto' => 'tcp', 'exposure' => 'docker'],
     ]], ['security_updates_count' => 3, 'reboot_required' => true]);
+    $machine->forceFill(['inventory' => [...$machine->inventory, 'certificates' => [
+        ['path' => '/etc/ssl/a.pem', 'subject' => 'CN=a.example.com', 'issuer' => 'R11', 'not_after' => now()->subDay()->getTimestamp(), 'names' => ['a.example.com']],
+        ['path' => '/etc/ssl/b.pem', 'subject' => 'CN=b.example.com', 'issuer' => 'R11', 'not_after' => now()->addDays(3)->getTimestamp(), 'names' => ['b.example.com']],
+    ]]])->save();
+    postureCve($machine, 'CVE-2026-0001', 'critical', exploited: true);
+    postureCve($machine, 'CVE-2026-0002', 'high');
 
     $report = Posture::report($machine);
     $checks = postureChecks($report);
 
     expect($report['score'])->toBe(0)
         ->and($report['grade'])->toBe('F')
-        ->and(collect($report['checks'])->pluck('status')->unique()->all())->toBe(['fail'])
-        ->and($report['checks'][0]['severity'])->toBe('high')
+        ->and(collect($report['checks'])->pluck('status')->unique()->sort()->values()->all())->toBe(['fail', 'unknown'])
+        ->and($report['checks'][0]['key'])->toBe('exploited')
+        ->and($checks['exploited']['params'])->toBe(['cves' => 'CVE-2026-0001'])
+        ->and($checks['cves']['params'])->toBe(['cves' => 'CVE-2026-0002'])
+        ->and($checks['password_used']['params']['count'])->toBe(3)
+        ->and($checks['certificate_expired']['params']['names'])->toBe('a.example.com')
+        ->and($checks['certificate_expiring']['params']['names'])->toBe('b.example.com')
         ->and($checks['exposed']['params']['services'])->toBe('PostgreSQL (5432/tcp)')
         ->and($checks['cleartext']['params']['services'])->toBe('Telnet (23/tcp)')
         ->and($checks['sign_ins']['params'])->toMatchArray(['failed' => 140, 'sources' => 9, 'root' => 60, 'minutes' => 60])
@@ -226,9 +252,9 @@ test('the Security page lists the workspace’s machines, counting each serious 
         ->where('machines.0.name', 'web-1')
         ->where('machines.0.score', 100)
         ->where('machines.0.policy', 'Default')
-        ->where('machines.1.score', 50)
+        ->where('machines.1.score', 76)
         ->where('machines.1.state', 'scored')
-        ->where('summary.average', 75)
+        ->where('summary.average', 88)
         ->where('summary.serious', 1)
         ->where('summary.scored', 2)
     );
@@ -254,4 +280,105 @@ test('the Security page names the policy that turned security watch off', functi
         ->where('machines.0.policy', 'Hosting')
         ->where('summary.scored', 0)
     );
+});
+
+test('keyboard-interactive sign-in through PAM counts as password sign-in', function () {
+    $ssh = fn (bool $keyboard, bool $pam) => [...hardened(), 'ssh' => [...hardened()['ssh'], 'kbd_interactive_authentication' => $keyboard, 'use_pam' => $pam]];
+
+    expect(postureChecks(Posture::report(postureMachine(Workspace::factory()->create(), 'a', $ssh(true, true))))['ssh_password']['status'])->toBe('fail')
+        ->and(postureChecks(Posture::report(postureMachine(Workspace::factory()->create(), 'b', $ssh(true, false))))['ssh_password']['status'])->toBe('pass');
+});
+
+test('the firewall default only counts when the firewall is on', function () {
+    $firewall = fn (bool $active, string $incoming) => ['backend' => 'ufw', 'installed' => true, 'active' => $active, 'default_incoming' => $incoming, 'ports' => []];
+
+    expect(postureChecks(Posture::report(postureMachine(Workspace::factory()->create(), 'a', hardened(), [], $firewall(true, 'allow'))))['firewall_default']['status'])->toBe('fail')
+        ->and(postureChecks(Posture::report(postureMachine(Workspace::factory()->create(), 'b', hardened(), [], $firewall(true, 'deny'))))['firewall_default']['status'])->toBe('pass')
+        ->and(postureChecks(Posture::report(postureMachine(Workspace::factory()->create(), 'c', hardened(), [], $firewall(false, 'allow'))))['firewall_default']['status'])->toBe('unknown');
+});
+
+test('a database published by Docker counts once, as exposed', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'docker-1', hardened(), [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 6379, 'exe' => '/usr/bin/docker-proxy', 'pid' => 5, 'cmdline' => 'redis-server *:6379'],
+    ], ['backend' => 'ufw', 'installed' => true, 'active' => true, 'default_incoming' => 'deny', 'ports' => [['port' => 6379, 'proto' => 'tcp', 'exposure' => 'docker']]]);
+
+    $checks = postureChecks(Posture::report($machine));
+
+    expect($checks['exposed']['status'])->toBe('fail')
+        ->and($checks['docker_ports']['status'])->toBe('pass');
+});
+
+test('Docker ports skip web ports and ServerOS’s own, and only count with a firewall on', function () {
+    $listeners = [
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 443, 'exe' => '/usr/bin/docker-proxy', 'pid' => 5],
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 8443, 'exe' => '/usr/bin/docker-proxy', 'pid' => 6],
+        ['proto' => 'tcp', 'address' => '0.0.0.0', 'port' => 2456, 'exe' => '/usr/bin/docker-proxy', 'pid' => 7],
+    ];
+    $firewall = fn (bool $active) => ['backend' => 'ufw', 'installed' => true, 'active' => $active, 'default_incoming' => 'deny', 'ports' => [
+        ['port' => 443, 'proto' => 'tcp', 'exposure' => 'docker'],
+        ['port' => 8443, 'proto' => 'tcp', 'exposure' => 'docker'],
+        ['port' => 2456, 'proto' => 'tcp', 'exposure' => 'docker'],
+    ]];
+    $machine = postureMachine(Workspace::factory()->create(), 'panel-1', hardened(), $listeners, $firewall(true));
+    $machine->forceFill(['inventory' => [...$machine->inventory, 'services' => [
+        ['key' => 'docker:abc', 'name' => 'serveros-gateway-1', 'ports' => [8443], 'details' => ['image' => 'ghcr.io/serveroshq/panel:latest']],
+    ]]])->save();
+
+    $checks = postureChecks(Posture::report($machine));
+    expect($checks['docker_ports']['status'])->toBe('fail')
+        ->and($checks['docker_ports']['params']['ports'])->toBe('2456/tcp');
+
+    $off = postureMachine(Workspace::factory()->create(), 'open-1', hardened(), $listeners, $firewall(false));
+    expect(postureChecks(Posture::report($off))['docker_ports']['status'])->toBe('unknown');
+});
+
+test('a renewed certificate doesn’t count its old copy as expired', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'tls-1', hardened());
+    $machine->forceFill(['inventory' => [...$machine->inventory, 'certificates' => [
+        ['path' => '/etc/letsencrypt/archive/a/cert1.pem', 'not_after' => now()->subDays(30)->getTimestamp(), 'names' => ['a.example.com']],
+        ['path' => '/etc/letsencrypt/archive/a/cert2.pem', 'not_after' => now()->addDays(60)->getTimestamp(), 'names' => ['a.example.com']],
+    ]]])->save();
+
+    $checks = postureChecks(Posture::report($machine));
+    expect($checks['certificate_expired']['status'])->toBe('pass')
+        ->and($checks['certificate_expiring']['status'])->toBe('pass');
+});
+
+test('an older daemon than the newest release fails, and no releases is unknown', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'old-1', hardened(), attributes: ['daemon_version' => 'v0.1.1-pre.30']);
+    $machine->forceFill(['facts' => [...$machine->facts, 'arch' => 'x86_64']])->save();
+
+    expect(postureChecks(Posture::report($machine))['daemon']['status'])->toBe('unknown');
+
+    DaemonRelease::query()->create(['version' => 'v0.1.1-pre.38', 'arch' => 'amd64', 'channel' => 'stable', 'sha256' => str_repeat('a', 64), 'signature' => 'sig']);
+    $checks = postureChecks(Posture::report($machine->fresh()));
+
+    expect($checks['daemon']['status'])->toBe('fail')
+        ->and($checks['daemon']['params'])->toBe(['installed' => 'v0.1.1-pre.30', 'latest' => 'v0.1.1-pre.38']);
+
+    $machine->forceFill(['daemon_version' => 'v0.1.1-pre.38'])->save();
+    expect(postureChecks(Posture::report($machine->fresh()))['daemon']['status'])->toBe('pass');
+});
+
+test('CVE checks count open vulnerabilities only, and leave the score alone when the CVE watcher is off', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'cve-1', hardened());
+    postureCve($machine, 'CVE-2026-0003', 'medium');
+    postureCve($machine, 'CVE-2026-0004', 'critical', resolved: true);
+
+    $checks = postureChecks(Posture::report($machine));
+    expect($checks['exploited']['status'])->toBe('pass')
+        ->and($checks['cves']['status'])->toBe('pass');
+
+    foreach (range(5, 9) as $n) {
+        postureCve($machine, "CVE-2026-000{$n}", 'high');
+    }
+    expect(postureChecks(Posture::report($machine->fresh()))['cves']['params'])->toBe(['cves' => 'CVE-2026-0005, CVE-2026-0006, CVE-2026-0007', 'more' => 2]);
+
+    $machine->forceFill(['vulns_scanned_at' => null])->save();
+    expect(Posture::report($machine->fresh())['state'])->toBe('incomplete');
+
+    config(['security.cves.enabled' => false]);
+    $report = Posture::report($machine->fresh());
+    expect($report['state'])->toBe('scored')
+        ->and(postureChecks($report))->not->toHaveKey('exploited');
 });
