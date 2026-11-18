@@ -425,3 +425,15 @@ test('the page shows each machine’s last 30 days, today live, and what started
         ->where('machines.0.newFailing', ['ssh_password'])
     );
 });
+
+test('the machine page shows its security score only to members who can manage machines', function () {
+    $workspace = Workspace::factory()->create();
+    $machine = postureMachine($workspace, 'web-1', hardened());
+    $viewer = User::factory()->create();
+    $workspace->members()->attach($viewer, ['role' => 'viewer']);
+    $url = 'https://'.$workspace->host().'/machines/'.$machine->id;
+
+    $this->actingAs($viewer)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('security', null));
+    $this->actingAs($workspace->owner)->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('security', ['state' => 'scored', 'score' => 100, 'grade' => 'A']));
+});

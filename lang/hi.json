@@ -3692,5 +3692,8 @@
     "Known to be exploited, with a fix waiting: :cves": "एक्सप्लॉइट होने की जानकारी है, फ़िक्स पेंडिंग है: :cves",
     "Rated critical or high, with a fix waiting: :cves": "क्रिटिकल या हाई रेटिंग, फ़िक्स पेंडिंग है: :cves",
     ":date: no score": ":date: कोई स्कोर नहीं",
-    "Wasn’t failing yesterday": "कल फ़ेल नहीं हो रहा था"
+    "Wasn’t failing yesterday": "कल फ़ेल नहीं हो रहा था",
+    "Security :score :grade": "सिक्योरिटी :score :grade",
+    "Security checks off": "सुरक्षा जांच बंद",
+    "Security incomplete": "सिक्योरिटी अधूरी"
 }

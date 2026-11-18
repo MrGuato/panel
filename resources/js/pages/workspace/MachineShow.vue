@@ -95,6 +95,8 @@ import { jobStatus } from '@/lib/jobStatus';
 import type { Tone } from '@/lib/jobStatus';
 import type { Workspace, WorkspaceAccess } from '@/types';
 import { describe, errorMessage, jobReason } from '@/lib/errors';
+import { onWorkspace } from '@/lib/workspaceRoute';
+import securityRoutes from '@/routes/workspace/security';
 
 const upgrade = useUpgradeLink();
 
@@ -144,6 +146,11 @@ const props = defineProps<{
         minutes: number;
     };
     issues?: HealthIssue[];
+    security?: {
+        state: string;
+        score: number | null;
+        grade: string | null;
+    } | null;
 }>();
 const page = usePage<{ workspaceAccess: WorkspaceAccess | null }>();
 
@@ -167,6 +174,43 @@ const canManage = computed(
         page.props.workspaceAccess?.permissions.includes('manage-machines') ??
         false,
 );
+const securityPill = computed(() => {
+    const security = props.security;
+    if (
+        !security ||
+        !['scored', 'incomplete', 'watch_off'].includes(security.state)
+    ) {
+        return null;
+    }
+    const score = security.score;
+
+    return {
+        href: onWorkspace(
+            securityRoutes.index(props.workspace.slug, {
+                query: { machine: props.machine.id },
+            }),
+        ),
+        label:
+            score === null
+                ? trans(
+                      security.state === 'watch_off'
+                          ? 'Security checks off'
+                          : 'Security incomplete',
+                  )
+                : trans('Security :score :grade', {
+                      score: String(score),
+                      grade: security.grade ?? '',
+                  }),
+        tone:
+            score === null
+                ? ''
+                : score >= 90
+                  ? 'ds-pill-green'
+                  : score >= 70
+                    ? 'ds-pill-amber'
+                    : 'ds-pill-red',
+    };
+});
 const online = computed(
     () =>
         props.machine.connection === 'online' ||
@@ -707,6 +751,15 @@ function usage(mount: string): { percent: number; free: number } | null {
                 >
                     {{ ' ' + $t(`Daemon ${machine.connection ?? 'offline'}`) }}
                 </span>
+                <Link
+                    v-if="securityPill"
+                    :href="securityPill.href"
+                    class="ds-pill hover:brightness-110"
+                    :class="securityPill.tone"
+                >
+                    <ShieldCheck class="size-3" :stroke-width="2" />
+                    {{ securityPill.label }}
+                </Link>
             </div>
         </template>
         <template #description>

@@ -20,6 +20,7 @@ use App\Support\Firewall;
 use App\Support\Health\WorkspaceHealth;
 use App\Support\Machines\MachinePolicies;
 use App\Support\ScheduledTasks;
+use App\Support\Security\Posture;
 use App\Support\ServiceTemplates\ServiceTemplateCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -79,6 +80,7 @@ class MachineController extends Controller
             'history' => Inertia::optional(fn () => MachineSample::history($machine, self::RANGES[$range])),
             'scheduled' => fn () => ScheduledTasks::for($machine),
             'issues' => fn () => app(WorkspaceHealth::class)->forMachine($machine),
+            'security' => fn () => $seesConsole ? Arr::only(Posture::report($machine), ['state', 'score', 'grade']) : null,
             'serviceGroups' => fn () => $machine->serviceGroups()->orderBy('name')->get()
                 ->map(fn (ServiceGroup $group) => $group->toPageProps())
                 ->all(),
