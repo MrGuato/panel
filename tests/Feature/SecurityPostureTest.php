@@ -162,6 +162,22 @@ test('root sign-in and failed sign-ins only fail when SSH accepts passwords', fu
         ->and(postureChecks(Posture::report($passwords))['sign_ins']['status'])->toBe('fail');
 });
 
+test('keyboard-interactive sign-in through PAM counts as SSH taking passwords', function () {
+    $machine = postureMachine(Workspace::factory()->create(), 'pam-1', [
+        ...hardened(),
+        'ssh' => ['password_authentication' => false, 'kbd_interactive_authentication' => true, 'use_pam' => true, 'permit_root_login' => 'yes'],
+    ]);
+    $noPam = postureMachine(Workspace::factory()->create(), 'pam-2', [
+        ...hardened(),
+        'ssh' => ['password_authentication' => false, 'kbd_interactive_authentication' => true, 'use_pam' => false, 'permit_root_login' => 'yes'],
+    ]);
+
+    expect(postureChecks(Posture::report($machine))['ssh_password']['status'])->toBe('fail')
+        ->and(postureChecks(Posture::report($machine))['ssh_root']['status'])->toBe('fail')
+        ->and(postureChecks(Posture::report($noPam))['ssh_password']['status'])->toBe('pass')
+        ->and(postureChecks(Posture::report($noPam))['ssh_root']['status'])->toBe('pass');
+});
+
 test('a machine with security watch off says so instead of incomplete', function () {
     $workspace = Workspace::factory()->create();
     $machine = postureMachine($workspace, 'quiet-1', hardened());
